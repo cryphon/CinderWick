@@ -3,6 +3,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <sys/select.h>
+#include <sys/ioctl.h>
 
 #define COLOR_RESET     "\x1b[0m"
 #define COLOR_GREEN     "\x1b[32m"
@@ -140,6 +141,31 @@ void bridge(int tty_fd) {
 }
 
 
+void trig_dld_rts_dtr(int fd) {
+    int rts_flag = TIOCM_RTS;
+    int dtr_flag = TIOCM_DTR;
+    // 1. Idle state: Clear both pins (HI Voltage)
+    ioctl(fd, TIOCMBIC, &rts_flag);
+    ioctl(fd, TIOCMBIC, &dtr_flag);
+    usleep(50000); // Controller RC reset curcuit needs time to discharge capacitors
+
+    // 2. Assert Boot Pin (GPIO0 goes LO)
+    ioctl(fd, TIOCMBIS, &rts_flag);
+    usleep(50000);
+
+    // 3. Assert Reset Pin (EN goes LO -> chip resets)
+    ioctl(fd, TIOCMBIS, &dtr_flag);
+    usleep(10000); // 100,s reset window
+    
+    // 4. Release Reset Pin (EN goes HI -> Chop boots and checks GPIO0)
+    ioctl(fd, TIOCMBIC, &dtr_flag);
+    usleep(50000); // Wait for bootstrap sampling
+
+    // 5. Release Boot Pin (GPIO0 goes HI)
+    ioctl(fd, TIOCMBIC, &rts_flag);
+}
+
+
 int main(void) {
     int fd = 0;
     const char* device = "/dev/ttyUSB0";
@@ -163,6 +189,18 @@ int main(void) {
     fcntl(fd, F_SETFL, flags& ~O_NDELAY);
 
     mod_termios(fd, &config);
+
+
+    int RTS_FLAG = TIOCM_RTS;
+    int DTR_FLAG = TIOCM_DTR;
+    if(ioctl(fd, TIOCMBIS, &RTS_FLAG) < 0) {
+        LOGE("Failed to set RTS pin");
+    }
+    if(ioctl(fd, TIOCMBIS, &DTR_FLAG) < 0) {
+        LOGE("Failed to set DTR pin");
+    }
+
+    trig_dld_rts_dtr(fd);
     bridge(fd);
 
     close(fd);
