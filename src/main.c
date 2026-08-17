@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <termios.h>
 #include <unistd.h>
+#include <sys/select.h>
 
 #define COLOR_RESET     "\x1b[0m"
 #define COLOR_GREEN     "\x1b[32m"
@@ -95,7 +96,7 @@ void mod_termios(int fd, struct termios* cfg) {
     cfg->c_cc[VTIME] = 0;
 
     /* Com speed(simple version using pre-def consts) */
-    if(cfsetispeed(cfg, B9600) < 0 || cfsetospeed(cfg, B9600) < 0) {
+    if(cfsetispeed(cfg, B115200) < 0 || cfsetospeed(cfg, B115200) < 0) {
         LOGE("Failed to set communication speed");
     }
     
@@ -104,6 +105,38 @@ void mod_termios(int fd, struct termios* cfg) {
         LOGE("Failed to apply configuration");
     }
     log_termios(cfg);
+}
+
+void bridge(int tty_fd) {
+    char c;
+    fd_set readfds;
+
+    while(1) {
+        FD_ZERO(&readfds);
+        FD_SET(tty_fd, &readfds);
+        FD_SET(STDIN_FILENO, &readfds);
+        int maxfd = (tty_fd > STDIN_FILENO ? tty_fd : STDIN_FILENO) + 1;
+
+        int r = select(maxfd, &readfds, NULL, NULL, NULL); // NULL timeout = block indef.
+        if(r < 0) {
+            LOGE("select() failed");
+            break;
+        }
+
+        if(FD_ISSET(tty_fd, &readfds)) {
+            if(read(tty_fd, &c, 1) > 0) {
+                write(STDOUT_FILENO, &c, 1);
+                if(c == 'q') break; // exit cond. (serial side)
+            }
+        }
+
+        if(FD_ISSET(STDIN_FILENO, &readfds)) {
+            if(read(STDIN_FILENO, &c, 1) > 0) {
+                if(c == 'q') break;
+                write(tty_fd, &c, 1);
+            }
+        }
+    }
 }
 
 
@@ -125,7 +158,12 @@ int main(void) {
     {
         LOGE("Unable to retrieve termios config from %s", device);
     }
+
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags& ~O_NDELAY);
+
     mod_termios(fd, &config);
+    bridge(fd);
 
     close(fd);
     return 0;
