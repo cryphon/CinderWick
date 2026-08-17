@@ -16,6 +16,14 @@
 
 struct termios config;
 
+void print_line_state(int fd, const char* label) {
+    int status;
+    ioctl(fd, TIOCMGET, &status);
+    LOGI("%s: RTS=%d DTR=%d", label,
+         (status & TIOCM_RTS) ? 1 : 0,
+         (status & TIOCM_DTR) ? 1 : 0);
+}
+
 void log_termios(const struct termios* t) {
     speed_t ispeed = cfgetispeed(t);
     speed_t ospeed = cfgetospeed(t);
@@ -52,7 +60,7 @@ void log_termios(const struct termios* t) {
 }
 
 void mod_termios(int fd, struct termios* cfg) {
-    log_termios(cfg);
+    //log_termios(cfg);
 
     /* 
      * Input flags - Turn off input processing
@@ -105,7 +113,7 @@ void mod_termios(int fd, struct termios* cfg) {
     if(tcsetattr(fd, TCSAFLUSH, cfg) < 0) {
         LOGE("Failed to apply configuration");
     }
-    log_termios(cfg);
+    //log_termios(cfg);
 }
 
 void bridge(int tty_fd) {
@@ -142,27 +150,34 @@ void bridge(int tty_fd) {
 
 
 void trig_dld_rts_dtr(int fd) {
-    int rts_flag = TIOCM_RTS;
-    int dtr_flag = TIOCM_DTR;
-    // 1. Idle state: Clear both pins (HI Voltage)
+    int rts_flag = TIOCM_RTS; // EN
+    int dtr_flag = TIOCM_DTR; // GPIO0
+
+    // 1. Idle state: Clear both pins (EN high, GPIO0 high)
     ioctl(fd, TIOCMBIC, &rts_flag);
+    print_line_state(fd, "rts_flag clear");
     ioctl(fd, TIOCMBIC, &dtr_flag);
+    print_line_state(fd, "dtr_flag clear");
     usleep(50000); // Controller RC reset curcuit needs time to discharge capacitors
 
-    // 2. Assert Boot Pin (GPIO0 goes LO)
+    // 2. Assert EN (RTS) -> chip held in reset
     ioctl(fd, TIOCMBIS, &rts_flag);
+    print_line_state(fd, "assert EN");
     usleep(50000);
 
-    // 3. Assert Reset Pin (EN goes LO -> chip resets)
+    // 3. Assert GPIO0 (DTR) -> boot pin armed still in reset
     ioctl(fd, TIOCMBIS, &dtr_flag);
+    print_line_state(fd, "assert DTR");
     usleep(10000); // 100,s reset window
     
-    // 4. Release Reset Pin (EN goes HI -> Chop boots and checks GPIO0)
-    ioctl(fd, TIOCMBIC, &dtr_flag);
+    // 4. Release EN (RTS) FIRST -> chip exits reset, samples GPIO0 = LOW -> download
+    ioctl(fd, TIOCMBIC, &rts_flag);
+    print_line_state(fd, "release EN");
     usleep(50000); // Wait for bootstrap sampling
 
-    // 5. Release Boot Pin (GPIO0 goes HI)
-    ioctl(fd, TIOCMBIC, &rts_flag);
+    // 5. Release GPIO0 (DTR) LAST -> back to HIGH
+    ioctl(fd, TIOCMBIC, &dtr_flag);
+    print_line_state(fd, "release DTR");
 }
 
 
@@ -189,16 +204,6 @@ int main(void) {
     fcntl(fd, F_SETFL, flags& ~O_NDELAY);
 
     mod_termios(fd, &config);
-
-
-    int RTS_FLAG = TIOCM_RTS;
-    int DTR_FLAG = TIOCM_DTR;
-    if(ioctl(fd, TIOCMBIS, &RTS_FLAG) < 0) {
-        LOGE("Failed to set RTS pin");
-    }
-    if(ioctl(fd, TIOCMBIS, &DTR_FLAG) < 0) {
-        LOGE("Failed to set DTR pin");
-    }
 
     trig_dld_rts_dtr(fd);
     bridge(fd);
