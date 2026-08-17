@@ -148,35 +148,28 @@ void bridge(int tty_fd) {
     }
 }
 
+void set_rts_dtr_lines(int fd, int rts, int dtr) {
+    int stat;
+    ioctl(fd, TIOCMGET, &stat);
+    if(rts) stat |= TIOCM_RTS; else stat &= ~TIOCM_RTS;
+    if(dtr) stat |= TIOCM_DTR; else stat &= ~TIOCM_DTR;
+    ioctl(fd, TIOCMSET, &stat); // single atomic(ish) call
+}
 
 void trig_dld_rts_dtr(int fd) {
-    int rts_flag = TIOCM_RTS; // EN
-    int dtr_flag = TIOCM_DTR; // GPIO0
 
-    // 1. Idle state: Clear both pins (EN high, GPIO0 high)
-    ioctl(fd, TIOCMBIC, &rts_flag);
-    print_line_state(fd, "rts_flag clear");
-    ioctl(fd, TIOCMBIC, &dtr_flag);
-    print_line_state(fd, "dtr_flag clear");
-    usleep(50000); // Controller RC reset curcuit needs time to discharge capacitors
-
-    // 2. Assert EN (RTS) -> chip held in reset
-    ioctl(fd, TIOCMBIS, &rts_flag);
+    // 1. Assert EN (RTS) -> chip held in reset
+    set_rts_dtr_lines(fd, 1, 0);
     print_line_state(fd, "assert EN");
     usleep(50000);
-
-    // 3. Assert GPIO0 (DTR) -> boot pin armed still in reset
-    ioctl(fd, TIOCMBIS, &dtr_flag);
-    print_line_state(fd, "assert DTR");
-    usleep(10000); // 100,s reset window
     
-    // 4. Release EN (RTS) FIRST -> chip exits reset, samples GPIO0 = LOW -> download
-    ioctl(fd, TIOCMBIC, &rts_flag);
+    // 2. Release EN (RTS) FIRST -> chip exits reset, samples GPIO0 = LOW -> download
+    set_rts_dtr_lines(fd, 0, 1);
     print_line_state(fd, "release EN");
     usleep(50000); // Wait for bootstrap sampling
 
-    // 5. Release GPIO0 (DTR) LAST -> back to HIGH
-    ioctl(fd, TIOCMBIC, &dtr_flag);
+    // 3. Release GPIO0 (DTR) LAST -> back to HIGH
+    set_rts_dtr_lines(fd, 0, 0);
     print_line_state(fd, "release DTR");
 }
 
