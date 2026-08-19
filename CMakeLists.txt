@@ -8,9 +8,11 @@ set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 
 set(MAIN_SOURCE_FILES
     ${SRC_DIR}/main.c
+    ${SRC_DIR}/serial.c
+    ${SRC_DIR}/reset.c
 )
 
-set(CMAKE_EXPORT_COMMANDS ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include_directories(${INCLUDE_DIR})
 
 add_executable(${PROJECT_NAME} ${MAIN_SOURCE_FILES})
