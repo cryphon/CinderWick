@@ -51,6 +51,6 @@ int main(void) {
     reset_to_wload(fd);
     bridge(fd);
 
-    close(fd);
+    serial_close(fd);
     return 0;
 } 
