@@ -16,7 +16,10 @@ int main(void) {
         return -1;
     }
 
-    reset_to_wload(fd);
+    if(reset_to_wload(fd) < 0) {
+        LOGE("Failed to reset chip into DOWNLOAD");
+        return -1;
+    }
     interactive_bridge(fd);
 
     serial_close(fd);
