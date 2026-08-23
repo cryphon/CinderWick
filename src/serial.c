@@ -135,6 +135,10 @@ int serial_open(const char* device, speed_t baud) {
     return fd;
 }
 
-void serial_close(int fd) {
-    close(fd);
+int serial_close(int fd) {
+    ssize_t n = close(fd);
+    if(n < 0) {
+        LOGE("Failed to close serial connection");
+        return -1;
+    }
 }
