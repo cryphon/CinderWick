@@ -2,6 +2,8 @@
 #include "log.h"
 #include <sys/select.h>
 #include <unistd.h>
+#include <errno.h>
+#include <string.h>
 
 
 int interactive_bridge(int fd) {
@@ -21,16 +23,35 @@ int interactive_bridge(int fd) {
         }
 
         if(FD_ISSET(fd, &readfds)) {
-            if(read(fd, &c, 1) > 0) {
-                write(STDOUT_FILENO, &c, 1);
-                if(c == 'q') break; // exit cond. (serial side)
+            ssize_t n = read(fd, &c, 1);
+            if(n < 0) {
+                if(errno == EINTR) continue;
+                LOGE("read(serial) failed: %s", strerror(errno));
+                return -1;
             }
+            if(n == 0) {
+                LOGE("serial device closed unexpectedly");
+                return -1;
+            }
+            if(write(STDOUT_FILENO, &c, 1) != 1) {
+                LOGE("write(stdout failed: %s", strerror(errno));
+                return -1;
+            }
+            if(c == 'q') break;
         }
 
         if(FD_ISSET(STDIN_FILENO, &readfds)) {
-            if(read(STDIN_FILENO, &c, 1) > 0) {
-                if(c == 'q') break;
-                write(fd, &c, 1);
+            ssize_t n = read(STDIN_FILENO, &c, 1);
+            if(n < 0) {
+                if(errno == EINTR) continue;
+                LOGE("read(stdin) failed: %s", strerror(errno));
+                return -1;
+            }
+            if(n == 0) break; //stdin closed (piped input ended)
+            if(c == 'q') break;
+            if(write(fd, &c, 1) != 1) {
+                LOGE("write(serial) failed: %s", strerror(errno));
+                return -1;
             }
         }
     }
