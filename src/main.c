@@ -20,7 +20,11 @@ int main(void) {
         LOGE("Failed to reset chip into DOWNLOAD");
         return -1;
     }
-    interactive_bridge(fd);
+
+    if(interactive_bridge(fd) < 0) {
+        LOGE("Interactive bridge failed");
+        return -1;
+    }
 
     serial_close(fd);
     return 0;
