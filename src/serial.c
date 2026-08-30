@@ -116,12 +116,12 @@ int serial_open(const char* device, speed_t baud) {
 
     if(!isatty(fd)) {
         LOGE("Device is not a TTY");
-        return -1;
+        goto serial_on_err;
     }
 
     if(tcgetattr(fd, &config) < 0) {
         LOGE("Unable to retrieve termios config from %s", device);
-        return -1;
+        goto serial_on_err;
     }
 
     int flags = fcntl(fd, F_GETFL, 0);
@@ -129,10 +129,13 @@ int serial_open(const char* device, speed_t baud) {
 
     if(set_config(fd, &config) < 0) {
         LOGE("Terminating serial opening, failed to set config");
-        return -1;
+        goto serial_on_err;
     }
-
     return fd;
+
+serial_on_err:
+    close(fd);
+    return -1;
 }
 
 int serial_close(int fd) {
