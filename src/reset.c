@@ -4,9 +4,16 @@
 #include <unistd.h>
 
 
-void print_line_state(int fd, const char* label) {
+int print_line_state(int fd, const char* label) {
     int status;
-    ioctl(fd, TIOCMGET, &status);
+    ssize_t res;
+
+    res = ioctl(fd, TIOCMGET, &status);
+    if(res < 0) {
+        LOGE("Failed TIOCMGET duing line state printing");
+        return -1;
+    }
+
     LOGI("%s: RTS=%d DTR=%d", label,
          (status & TIOCM_RTS) ? 1 : 0,
          (status & TIOCM_DTR) ? 1 : 0);
