@@ -11,6 +11,7 @@ set(MAIN_SOURCE_FILES
     ${SRC_DIR}/serial.c
     ${SRC_DIR}/reset.c
     ${SRC_DIR}/bridge.c
+    ${SRC_DIR}/protocol.c
 )
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
