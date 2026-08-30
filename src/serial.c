@@ -136,9 +136,27 @@ int serial_open(const char* device, speed_t baud) {
 }
 
 int serial_close(int fd) {
-    ssize_t n = close(fd);
-    if(n < 0) {
+    if(close(fd) < 0) {
         LOGE("Failed to close serial connection");
         return -1;
     }
+    return 0;
+}
+
+int serial_send_byte(int fd, unsigned char c) {
+    ssize_t res = write(fd, &c, 1);
+    if(res < 0) {
+        LOGE("Failed to write byte to serial");
+        return -1;
+    }
+    return 0;
+}
+
+int serial_recv_byte(int fd, unsigned char* out) {
+    ssize_t res = read(fd, out, 1);
+    if(res < 0) {
+        LOGE("Failed to read byte from serial");
+        return -1;
+    }
+    return 0;
 }
