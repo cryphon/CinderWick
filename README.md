@@ -12,4 +12,5 @@ Currently about to support ROM bootloader-only flashing. Stub loader uploader is
 Sources:
 ```md
 # https://datatracker.ietf.org/doc/html/rfc1055
+# https://docs.espressif.com/projects/esptool/en/latest/esp32s3/advanced-topics/serial-protocol.html
 ```
