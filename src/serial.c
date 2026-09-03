@@ -2,9 +2,10 @@
 
 #include "log.h"
 #include <fcntl.h>
-#include <unistd.h>
 #include <sys/select.h>
 #include <sys/ioctl.h>
+#include <errno.h>
+#include <string.h>
 
 void log_termios(const struct termios* t) {
     speed_t ispeed = cfgetispeed(t);
@@ -162,4 +163,23 @@ int serial_recv_byte(int fd, unsigned char* out) {
         return -1;
     }
     return 0;
+}
+
+int serial_recv_byte_timeout(int fd, unsigned char* out, size_t timeout_ms) {
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(fd, &fds);
+
+    struct timeval tv = { timeout_ms / 1000, (timeout_ms % 1000) * 1000 };
+
+    int res = select(fd + 1, &fds, NULL, NULL, &tv);
+    if(res == 0) {
+        LOGE("serial_recv_byte: timed out");
+        return -1;
+    }
+    else if(res < 0) {
+        LOGE("select() failed: %s", strerror(errno));
+        return -1;
+    }
+    return serial_recv_byte(fd, out);
 }

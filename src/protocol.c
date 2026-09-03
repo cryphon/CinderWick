@@ -6,6 +6,7 @@
 #define ESC         0333    /* Byte stuffing */
 #define ESC_END     0334    /* ESC ESC_END means END data byte */
 #define ESC_ESC     0335    /* ESC ESC_ESC means ESC data byte */
+#define SERIAL_TIMEOUT 100    /* In MS */
 
 int slip_encode(int fd, const unsigned char* payload, size_t len) {
     serial_send_byte(fd, END);
@@ -33,14 +34,14 @@ int slip_decode(int fd, unsigned char* buf, size_t max_len) {
     size_t out_len = 0;
 
     /* Wait for leading END byte that starts frame. */
-    if(serial_recv_byte(fd, &c) < 0) return -1;
+    if(serial_recv_byte_timeout(fd, &c, SERIAL_TIMEOUT) < 0) return -1;
     if(c != END) {
         LOGE("Expected SLIP frame start (0XC0) got 0x%02x", c);
         return -1;
     }
 
     while(1) {
-        if(serial_recv_byte(fd, &c) < 0) return -1;
+        if(serial_recv_byte_timeout(fd, &c, SERIAL_TIMEOUT) < 0) return -1;
         if(c == END) {
             // Frame end
             return (int)out_len;
@@ -48,7 +49,7 @@ int slip_decode(int fd, unsigned char* buf, size_t max_len) {
         else if (c == ESC) {
             // Escaped byte follows
             unsigned char esc;
-            if(serial_recv_byte(fd, &esc) < 0) return -1;
+            if(serial_recv_byte_timeout(fd, &esc, SERIAL_TIMEOUT) < 0) return -1;
             
             if(esc == ESC_END) {
                 c = END;
