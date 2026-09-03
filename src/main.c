@@ -33,33 +33,13 @@ int main(void) {
             return -1;
         }
     }
-
-    unsigned char sync_cmd[] = {
-        0x00, 0x08, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00,  // direction, opcode, len(0x24,0x00), checksum(0x00000000)
-        0x07, 0x07, 0x12, 0x20,
-        0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55,
-        0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55,
-        0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55,
-        0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55
-    }; 
     tcflush(fd, TCIFLUSH);
-    int synced = 0;
-    for (int attempt = 0; attempt < 7 && !synced; attempt++) {
-        slip_encode(fd, sync_cmd, sizeof(sync_cmd));
-        tcdrain(fd);
 
-        unsigned char decoded[64];
-        int len = slip_decode(fd, decoded, sizeof(decoded)); // 100ms per attempt
-        if (len > 0) {
-            LOGI("Sync succeeded on attempt %d, got %d bytes:", attempt + 1, len);
-            for (int i = 0; i < len; i++) fprintf(stderr, "%02x ", decoded[i]);
-            fprintf(stderr, "\n");
-            synced = 1;
-        } else {
-            LOGW("Sync attempt %d failed, retrying...", attempt + 1);
-        }
-    }
-    if (!synced) LOGE("Sync failed after all attempts");
+    if(proto_sync(fd) < 0) { LOGE("sync failed"); return -1; }
+    if(proto_spi_attach(fd) < 0) { LOGE("spi_attach failed"); return -1; }
+
+
+
     serial_close(fd);
     return 0;
 } 
