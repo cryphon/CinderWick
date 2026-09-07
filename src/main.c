@@ -13,7 +13,7 @@
 #include "protocol.h"
 
 
-#define BRIDGE_BIT 0
+#define BRIDGE_BIT 1
 
 int main(void) {
     int fd = serial_open("/dev/ttyUSB0", B115200);
@@ -27,18 +27,17 @@ int main(void) {
         return -1;
     }
 
+    tcflush(fd, TCIFLUSH);
+
+    if(proto_sync(fd) < 0) { LOGE("sync failed"); return -1; }
+    if(proto_spi_attach(fd) < 0) { LOGE("spi_attach failed"); return -1; }
+
     if(BRIDGE_BIT) {
         if(interactive_bridge(fd) < 0) {
             LOGE("Interactive bridge failed");
             return -1;
         }
     }
-    tcflush(fd, TCIFLUSH);
-
-    if(proto_sync(fd) < 0) { LOGE("sync failed"); return -1; }
-    if(proto_spi_attach(fd) < 0) { LOGE("spi_attach failed"); return -1; }
-
-
 
     serial_close(fd);
     return 0;
