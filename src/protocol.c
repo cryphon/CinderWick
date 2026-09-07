@@ -72,3 +72,122 @@ int slip_decode(int fd, unsigned char* buf, size_t max_len) {
     }
     return 0;
 }
+
+int slip_decode_timeout(int fd, unsigned char* buf, size_t max_len, int timeout_ms) {
+    unsigned char c;
+    size_t out_len = 0;
+
+    if (serial_recv_byte_timeout(fd, &c, timeout_ms) < 0) return -1;
+    if (c != 0xC0) {
+        LOGE("Expected SLIP frame start (0xC0), got 0x%02x", c);
+        return -1;
+    }
+
+    while (1) {
+        if (serial_recv_byte_timeout(fd, &c, timeout_ms) < 0) return -1;
+
+        if (c == 0xC0) {
+            return (int)out_len;
+        } else if (c == 0xDB) {
+            unsigned char esc;
+            if (serial_recv_byte_timeout(fd, &esc, timeout_ms) < 0) return -1;
+            if (esc == 0xDC) c = 0xC0;
+            else if (esc == 0xDD) c = 0xDB;
+            else {
+                LOGE("Invalid SLIP escape sequence: 0xDB 0x%02x", esc);
+                return -1;
+            }
+        }
+
+        if(out_len >= max_len) {
+            LOGE("slip_decode: output buffer full, frame too large");
+            fprintf(stderr, "RAW (first %zu bytes): ", out_len);
+            for (size_t i = 0; i < out_len; i++) fprintf(stderr, "%02x ", buf[i]);
+            fprintf(stderr, "\n");
+            return -1;
+        }        
+        buf[out_len++] = c;
+    }
+}
+
+// Sends cmd (already full frame body, unencoded), retries on timeout/failure
+// and returns the decoded response length, or -1 if all attempts fail
+static int proto_send_and_wait(int fd, 
+        const unsigned char* cmd, size_t cmd_len,
+        unsigned char* resp_buf, size_t resp_buf_len,
+        int max_attempts, const char* lbl) {
+    for(int attempt = 0; attempt < max_attempts; attempt++) {
+        tcflush(fd, TCIFLUSH);
+
+        slip_encode(fd, cmd, cmd_len);
+        if(tcdrain(fd) < 0) {
+            LOGE("%s: tcdrain failed on attempt %d", lbl, attempt + 1);
+            continue;
+        }
+
+        int len = slip_decode_timeout(fd, resp_buf, resp_buf_len, 50);
+        if(len > 0) {
+            LOGI("%s: succeeded on attempt %d (%d bytes)", lbl, attempt + 1, len);
+            return len;
+        }
+
+        LOGW("%s: attempt %d failed, retrying...", lbl, attempt + 1);
+    }
+
+    LOGE("%s: failed after %d attempts", lbl, max_attempts);
+    return -1;
+}
+
+static void proto_drain_extra_responses(int fd) {
+    unsigned char buf[64];
+    int consecutive_empty = 0;
+    while (consecutive_empty < 2) {
+        int len = slip_decode_timeout(fd, buf, sizeof(buf), 30);
+        if (len <= 0) consecutive_empty++;
+        else consecutive_empty = 0;
+    }
+}
+
+int proto_sync(int fd) {
+    unsigned char sync_cmd[] = {
+        0x00, 0x08, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00,  // direction, opcode, len(0x24,0x00), checksum(0x00000000)
+        0x07, 0x07, 0x12, 0x20,
+        0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55,
+        0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55,
+        0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55,
+        0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55
+    }; 
+
+    unsigned char response[64];
+    int len = proto_send_and_wait(fd, sync_cmd, sizeof(sync_cmd), 
+            response, sizeof(response), 7, "SYNC");
+
+    if(len < 0) return -1;
+
+    if(len < 4 || response[0] != 0x01 || response[1] != 0x08) {
+        LOGE("SYNC: unexpected response header");
+        return -1;
+    }
+
+    proto_drain_extra_responses(fd);
+    return 0;
+}
+
+int proto_spi_attach(int fd) {
+    unsigned char spi_attach_cmd[] = {
+        0x00, 0x0D, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, // spi_config = 0 (use default pins)
+        0x00, 0x00, 0x00, 0x00 // reserved
+    };
+
+    unsigned char response[16];
+    int len = proto_send_and_wait(fd, spi_attach_cmd, sizeof(spi_attach_cmd),
+            response, sizeof(response), 7, "SPI_ATTACH");
+
+    if(len < 0) return -1;
+    if(len < 4 || response[0] != 0x01 || response[1] != 0x0D) {
+        LOGE("SPI_ATTACH: unexpected response header");
+        return -1;
+    }
+    return 0;
+}
